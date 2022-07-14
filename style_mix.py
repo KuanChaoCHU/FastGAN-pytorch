@@ -27,7 +27,7 @@ dataloader_workers = 8
 current_iteration = 0
 save_interval = 100
 device = 'cuda:0'
-im_size = 256
+im_size = 512
 
 
 netG = Generator(ngf=ngf, nz=nz, im_size=im_size)
@@ -36,8 +36,10 @@ netG.apply(weights_init)
 netD = Discriminator(ndf=ndf, im_size=im_size)
 netD.apply(weights_init)
 
-netG.to(device)
-netD.to(device)
+netG = nn.DataParallel(netG.to(device))  # 0831 fixed, mine?
+netD = nn.DataParallel(netD.to(device))  # 0831 fixed, mine?
+#netG.to(device)
+#netD.to(device)
 
 avg_param_G = copy_G_params(netG)
 
@@ -46,19 +48,30 @@ fixed_noise = torch.FloatTensor(8, nz).normal_(0, 1).to(device)
 optimizerG = optim.Adam(netG.parameters(), lr=nlr, betas=(nbeta1, 0.999))
 optimizerD = optim.Adam(netD.parameters(), lr=nlr, betas=(nbeta1, 0.999))
 
-j = 4
-checkpoint = "./models/all_%d.pth"%(j*10000)
+j = 3
+#checkpoint = "./models/all_%d.pth"%(j*10000)
+checkpoint = "train_results/testRiverK/models/all_%d.pth"%(j*10000)
 ckpt = torch.load(checkpoint)
 netG.load_state_dict(ckpt['g'])
 netD.load_state_dict(ckpt['d'])
 avg_param_G = ckpt['g_ema']
 load_params(netG, avg_param_G)
 
-bs = 8
-noise_a = torch.randn(bs, nz).to(device)
-noise_b = torch.randn(bs, nz).to(device)
 
-def get_early_features(net, noise):
+# use invert real z
+bs = 1
+inv_fpath = 'train_results/latent6N6F_fixed/models/40000.pth'
+invs = torch.load(inv_fpath)
+idxa, idxb = 10, 11
+#idxa, idxb = 3, 7
+noise_a = invs[idxa,:].view(-1,256).to(device)
+noise_b = invs[idxb,:].view(-1,256).to(device)
+
+#noise_a = torch.randn(bs, nz).to(device)
+#noise_b = torch.randn(bs, nz).to(device)
+
+def get_early_features(netDP, noise):
+    net = netDP.module
     feat_4 = net.init(noise)
     feat_8 = net.feat_8(feat_4)
     feat_16 = net.feat_16(feat_8)
@@ -66,7 +79,8 @@ def get_early_features(net, noise):
     feat_64 = net.feat_64(feat_32)
     return feat_8, feat_16, feat_32, feat_64
 
-def get_late_features(net, im_size, feat_64, feat_8, feat_16, feat_32):
+def get_late_features(netDP, im_size, feat_64, feat_8, feat_16, feat_32):
+    net = netDP.module
     feat_128 = net.feat_128(feat_64)
     feat_128 = net.se_128(feat_8, feat_128)
 
@@ -99,4 +113,4 @@ for i in range(bs):
     imgs.append(gimgs.cpu())
 
 imgs = torch.cat(imgs)
-vutils.save_image(imgs.add(1).mul(0.5), 'style_mix_1.jpg', nrow=bs+1)
+vutils.save_image(imgs.add(1).mul(0.5), 'style_mix_fx.jpg', nrow=bs+1)

@@ -1,4 +1,6 @@
 import os
+import pickle
+from collections import OrderedDict
 import numpy as np
 import torch
 import torch.utils.data as data
@@ -7,6 +9,28 @@ from PIL import Image
 from copy import deepcopy
 import shutil
 import json
+
+
+def convert_DP_state_dict(dp_state_dict):
+    # convert the state_dict saved from DataParallel model 
+    new_state_dict = OrderedDict()
+    for k, v in dp_state_dict.items():
+        name = k[7:]  # remove the 'module.' prefix
+        new_state_dict[name] = v   
+    return new_state_dict
+
+
+def save_to_pickle(path, target, overWrite=True):
+    ''' Save the target object to path
+    '''
+    if not overWrite:
+        if os.path.isfile(path):
+            print("Pickle not saved. File already exists!")
+            return 
+    
+    with open(path, 'wb') as f:
+        pickle.dump(target, f)
+
 
 def InfiniteSampler(n):
     """Data sampler"""
@@ -25,7 +49,7 @@ class InfiniteSamplerWrapper(data.sampler.Sampler):
     """Data sampler wrapper"""
     def __init__(self, data_source):
         self.num_samples = len(data_source)
-
+        
     def __iter__(self):
         return iter(InfiniteSampler(self.num_samples))
 
@@ -39,6 +63,7 @@ def copy_G_params(model):
     
 
 def load_params(model, new_param):
+    # 0908: Ah I see, not load state_dict; only used for g_ema copy
     for p, new_p in zip(model.parameters(), new_param):
         p.data.copy_(new_p)
 

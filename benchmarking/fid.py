@@ -62,11 +62,11 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
 
     parser.add_argument('--batch', type=int, default=64)
-    parser.add_argument('--size', type=int, default=256)
-    parser.add_argument('--path_a', type=str)
+    parser.add_argument('--size', type=int, default=256)  # was 256 (512, to be fair?)
+    parser.add_argument('--path_a', type=str)  # real dataset
     parser.add_argument('--path_b', type=str)
-    parser.add_argument('--iter', type=int, default=3)
-    parser.add_argument('--end', type=int, default=13)
+    parser.add_argument('--iter', type=int, default=0)
+    parser.add_argument('--end', type=int, default=10)
 
     args = parser.parse_args()
 
@@ -90,9 +90,10 @@ if __name__ == '__main__':
     real_mean = np.mean(features_a, 0)
     real_cov = np.cov(features_a, rowvar=False)
     
+    fid_results = []
     #for folder in os.listdir(args.path_b):
-    for folder in range(args.iter,args.end+1):
-        folder = 'eval_%d'%(folder*10000)
+    for idx in range(args.iter,args.end+1):
+        folder = 'eval_%d'%(idx*5000)
         if os.path.exists(os.path.join( args.path_b, folder )):
             print(folder)
             dset_b = ImageFolder( os.path.join( args.path_b, folder ), transform)
@@ -105,5 +106,9 @@ if __name__ == '__main__':
             sample_cov = np.cov(features_b, rowvar=False)
 
             fid = calc_fid(sample_mean, sample_cov, real_mean, real_cov)
+            fid_results.append([int(idx*5000), fid])
 
             print(folder, ' fid:', fid)
+    
+    fid_results = np.array(fid_results)
+    np.save(os.path.join(args.path_b, 'fid_eval.npy'), fid_results)

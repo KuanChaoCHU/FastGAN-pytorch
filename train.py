@@ -60,7 +60,7 @@ def train(args):
     im_size = args.im_size
     ndf = 64
     ngf = 64
-    nz = 256
+    nz = 512
     nlr = 0.0002
     nbeta1 = 0.5
     use_cuda = True
@@ -78,7 +78,7 @@ def train(args):
             transforms.Resize((int(im_size),int(im_size))),
             transforms.RandomHorizontalFlip(),
             transforms.ToTensor(),
-            transforms.Normalize(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5])
+            transforms.Normalize(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5])  # this only works on tensor
         ]
     trans = transforms.Compose(transform_list)
     
@@ -159,7 +159,7 @@ def train(args):
             avg_p.mul_(0.999).add_(0.001 * p.data)
 
         if iteration % 100 == 0:
-            print("GAN: loss d: %.5f    loss g: %.5f"%(err_dr, -err_g.item()))
+            print("GAN: loss d: %.5f    loss g: %.5f"%(err_dr, -err_g.item()))  # this is not correct!?
 
         if iteration % (save_interval*10) == 0:
             backup_para = copy_G_params(netG)
@@ -175,7 +175,7 @@ def train(args):
         if iteration % (save_interval*50) == 0 or iteration == total_iterations:
             backup_para = copy_G_params(netG)
             load_params(netG, avg_param_G)
-            torch.save({'g':netG.state_dict(),'d':netD.state_dict()}, saved_model_folder+'/%d.pth'%iteration)
+            torch.save({'g':netG.state_dict(),'d':netD.state_dict()}, saved_model_folder+'/%d.pth'%iteration)  # might cause some problem if DataParallel
             load_params(netG, backup_para)
             torch.save({'g':netG.state_dict(),
                         'd':netD.state_dict(),
@@ -194,8 +194,7 @@ if __name__ == "__main__":
     parser.add_argument('--batch_size', type=int, default=8, help='mini batch number of images')
     parser.add_argument('--im_size', type=int, default=1024, help='image resolution')
     parser.add_argument('--ckpt', type=str, default='None', help='checkpoint weight path if have one')
-
-
+    
     args = parser.parse_args()
     print(args)
 

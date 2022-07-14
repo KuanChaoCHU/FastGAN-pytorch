@@ -5,8 +5,11 @@ import torch.nn.functional as F
 from torch.utils.data.dataloader import DataLoader
 from torchvision import transforms
 from torchvision import utils as vutils
+import numpy as np
 
+import os
 import argparse
+from collections import OrderedDict
 from tqdm import tqdm
 
 from models import weights_init, Discriminator, Generator, SimpleDecoder
@@ -19,6 +22,15 @@ percept = lpips.PerceptualLoss(model='net-lin', net='vgg', use_gpu=True)
 
 
 #torch.backends.cudnn.benchmark = True
+
+
+def convert_DP_state_dict(dp_state_dict):
+    # convert the state_dict saved from DataParallel model 
+    new_state_dict = OrderedDict()
+    for k, v in dp_state_dict.items():
+        name = k[7:]  # remove the 'module.' prefix
+        new_state_dict[name] = v   
+    return new_state_dict
 
 
 def crop_image_by_part(image, part):
@@ -59,7 +71,7 @@ def interpolate(z1, z2, netG, img_name, step=8):
 
 def train(args):
 
-    data_root = args.path
+    data_root = os.path.join(args.path, f'group{args.group}')
     total_iterations = args.iter
     checkpoint = args.ckpt
     batch_size = args.batch_size
@@ -82,7 +94,7 @@ def train(args):
 
     transform_list = [
             transforms.Resize((int(im_size),int(im_size))),
-            transforms.RandomHorizontalFlip(),
+            #transforms.RandomHorizontalFlip(),
             transforms.ToTensor(),
             transforms.Normalize(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5])
         ]
@@ -90,18 +102,17 @@ def train(args):
     
     dataset = ImageFolder(root=data_root, transform=trans)
     dataloader = iter(DataLoader(dataset, batch_size=batch_size, shuffle=False,
-                      sampler=InfiniteSamplerWrapper(dataset), num_workers=dataloader_workers, pin_memory=True))
+                      #sampler=InfiniteSamplerWrapper(dataset), 
+                      num_workers=dataloader_workers, pin_memory=True)) 
 
-
-    
-    netG = Generator(ngf=ngf, nz=nz, im_size=im_size)
-
-    
+    netG = Generator(ngf=ngf, nz=nz, im_size=im_size)    
     ckpt = torch.load(checkpoint)
-    load_params( netG , ckpt['g_ema'] )
-    #netG.eval()
+    netG.load_state_dict(convert_DP_state_dict(ckpt['g']))
+    load_params(netG, ckpt['g_ema'])
+    #netG.eval() unstable, harms
     netG.to(device)
-
+    del ckpt
+ 
     fixed_noise = torch.randn(batch_size, nz, requires_grad=True, device=device)
     optimizerG = optim.Adam([fixed_noise], lr=0.1, betas=(nbeta1, 0.999))
     
@@ -127,33 +138,36 @@ def train(args):
             print("lpips loss g: %.5f"%(log_rec_loss/100))
             log_rec_loss = 0
 
-        if iteration % (save_interval*2) == 0:
-            
+        #if iteration % (save_interval*2) == 0:
+        if iteration == total_iterations:    
             with torch.no_grad():
                 vutils.save_image( torch.cat([
                         real_image, g_image]).add(1).mul(0.5), saved_image_folder+'/rec_%d.jpg'%iteration )
 
-                interpolate(fixed_noise[0], fixed_noise[1], netG, saved_image_folder+'/interpolate_0_1_%d.jpg'%iteration)
+                #interpolate(fixed_noise[0], fixed_noise[1], netG, saved_image_folder+'/interpolate_0_1_%d.jpg'%iteration)
         
-        if iteration % (save_interval*5) == 0 or iteration == total_iterations:
-            torch.save(fixed_noise, saved_model_folder+'/%d.pth'%iteration)
-            
+        #if iteration % (save_interval*50) == 0 or iteration == total_iterations:
+        if iteration == total_iterations:
+        #    torch.save(fixed_noise, saved_model_folder+'/%d.pth'%iteration)
+            np.save(os.path.join(saved_model_folder, f'g{args.group}.npy'), fixed_noise.detach().cpu().numpy())     
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='region gan')
-
-    parser.add_argument('--path', type=str, default='../lmdbs/art_landscape_1k', help='path of resource dataset, should be a folder that has one or many sub image folders inside')
+    parser.add_argument('--path', type=str, default='dataset/river_k_subset', help='path of resource dataset, should be a folder that has one or many sub image folders inside')
     parser.add_argument('--cuda', type=int, default=0, help='index of gpu to use')
-    parser.add_argument('--name', type=str, default='test1', help='experiment name')
-    parser.add_argument('--iter', type=int, default=50000, help='number of iterations')
+    parser.add_argument('--name', type=str, default='latent6N6F_fixed2', help='experiment name')
+    parser.add_argument('--group', type=int, default=0, help='')
+    parser.add_argument('--iter', type=int, default=50000, help='(50k) number of iterations')
     parser.add_argument('--start_iter', type=int, default=0, help='the iteration to start training')
-    parser.add_argument('--batch_size', type=int, default=8, help='mini batch number of images')
-    parser.add_argument('--im_size', type=int, default=1024, help='image resolution')
-    parser.add_argument('--ckpt', type=str, default='None', help='checkpoint weight path')
+    parser.add_argument('--batch_size', type=int, default=12, help='mini batch number of images')
+    parser.add_argument('--im_size', type=int, default=512, help='image resolution')
+    parser.add_argument('--ckpt', type=str, default='train_results/testRiverK/models/all_30000.pth', help='(None is invaild in this script) checkpoint weight path')
 
 
     args = parser.parse_args()
     print(args)
 
     train(args)
+    #out  = next(x)
+    #print(f'unique: {torch.unique(out[:,0,215,225]).size()}')

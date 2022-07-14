@@ -1,5 +1,6 @@
 import torch
 import torch.nn as nn
+from torch.nn import init
 from torch.nn.utils import spectral_norm
 import torch.nn.functional as F
 
@@ -17,6 +18,21 @@ def weights_init(m):
     elif classname.find('BatchNorm') != -1:
         m.weight.data.normal_(1.0, 0.02)
         m.bias.data.fill_(0)
+
+
+def my_weights_init(m):
+    # use 'kaiming' instead of 'normal'
+    classname = m.__class__.__name__
+    if hasattr(m, 'weight') and (classname.find('Conv') != -1 or classname.find('Linear') != -1):
+        init.kaiming_normal_(m.weight.data, a=0, mode='fan_in') 
+
+        if hasattr(m, 'bias') and m.bias is not None:
+                init.constant_(m.bias.data, 0.0)
+
+    elif classname.find('BatchNorm2d') != -1:  # BatchNorm Layer's weight is not a matrix; only normal distribution applies.(copied)
+        init.normal_(m.weight.data, 1.0, 0.02)
+        init.constant_(m.bias.data, 0.0)   
+
 
 def conv2d(*args, **kwargs):
     return spectral_norm(nn.Conv2d(*args, **kwargs))
@@ -117,6 +133,20 @@ def UpBlockComp(in_planes, out_planes):
         batchNorm2d(out_planes*2), GLU()
         )
     return block
+
+
+def UpBlockComp_mine(in_planes, out_planes):
+    block = nn.Sequential(
+        nn.Upsample(scale_factor=2, mode='nearest'),
+        conv2d(in_planes, out_planes*2, 3, 1, 1, bias=False),
+        #convTranspose2d(in_planes, out_planes*2, 4, 2, 1, bias=False),
+        #NoiseInjection(),
+        batchNorm2d(out_planes*2), GLU(),
+        conv2d(out_planes, out_planes*2, 3, 1, 1, bias=False),
+        #NoiseInjection(),
+        batchNorm2d(out_planes*2), GLU()
+        )
+    return block    
 
 
 class Generator(nn.Module):
